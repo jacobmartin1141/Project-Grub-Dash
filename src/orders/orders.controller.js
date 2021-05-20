@@ -8,33 +8,33 @@ const orders = require(path.resolve("src/data/orders-data"));
 const nextId = require("../utils/nextId");
 
 
-function initData(req, res, next) {
+const propertiesExist = require("../utils/propertiesExist")("foundOrder");
+
+const propertyValuesValid = require("../utils/propertyValuesValid")("foundOrder");
+
+
+function checkNewOrder(req, res, next) {
     res.locals.foundOrder = req.body.data;
     next();
 }
 
+function checkExistingOrder(req, res, next) {
+    const { orderId } = req.params;
 
-function checkProperties() {
-    const requiredProps = [...arguments];
+    const orderIndex = orders.findIndex((order) => order.id === orderId);
 
-    return (req, res, next) => {
-        const missingProp = requiredProps.find((prop) => {
-            if(!res.locals.foundOrder[prop]) {
-                return true;
-            }
-            return false;
-        });
-
-        if(missingProp === undefined) {
-            next();
-            return;
-        }
+    if(orderIndex === -1) {
         next({
-            status:400,
-            message: `Order must include property ${missingProp}`
-        })
+            status: 404,
+            message: `Order does not exist: ${orderId}.`,
+        });
+        return;
     }
+    res.locals.orderIndex = orderIndex;
+    res.locals.foundOrder = orders[orderIndex];
+    next();
 }
+
 
 function hasValidDishes(req, res, next) {
     const { dishes } = res.locals.foundOrder;
@@ -52,14 +52,6 @@ function hasValidDishes(req, res, next) {
 function hasValidQuantity(req, res, next) {
     const { dishes } = res.locals.foundOrder;
 
-    if(dishes.length === 0) {
-        next({
-            status: 400,
-            message: "Order must include at least one dish."
-        });
-        return;
-    }
-
     const foundIndex = dishes.findIndex((dish, index) => {
         return(!dish.quantity || !Number.isInteger(dish.quantity));
     });
@@ -75,42 +67,6 @@ function hasValidQuantity(req, res, next) {
     });
 }
 
-function hasValidStatus(req, res, next) {
-    const ordersStatus = res.locals.foundOrder.status;
-    const validStatus = [
-        "pending",
-        "preparing",
-        "out-for_delivery",
-        "delivered",
-    ];
-    
-    if(validStatus.includes(ordersStatus)) {
-        next();
-    }
-    next({
-        status: 400,
-        message: `Order must have a status of pending, preparing, out-for-delivery, delivered: ${ordersStatus}`,
-    });
-    return;
-}
-
-
-function orderExists(req, res, next) {
-    const { orderId } = req.params;
-
-    const orderIndex = orders.findIndex((order) => order.id === orderId);
-
-    if(orderIndex === -1) {
-        next({
-            status: 404,
-            message: `Order does not exist: ${orderId}.`,
-        });
-        return;
-    }
-    res.locals.orderIndex = orderIndex;
-    res.locals.foundOrder = orders[orderIndex];
-    next();
-}
 
 function bodyIdMatchesRoute(req, res, next) {
     const { orderId } = req.params;
@@ -128,32 +84,6 @@ function bodyIdMatchesRoute(req, res, next) {
     next({
         status: 400,
         message: `Order id does not match route id. Order: ${id}, Route: ${orderId}.`,
-    });
-}
-
-function notDelivered(req, res, next) {
-    const ordersStatus = res.locals.foundOrder.status;
-
-    if(ordersStatus === "delivered") {
-        next({
-            status: 400,
-            message: "Order status is delivered",
-        });
-        return;
-    }
-    next();
-}
-
-function isPending(req, res, next) {
-    const ordersStatus = res.locals.foundOrder.status;
-
-    if(ordersStatus === "pending") {
-        next();
-        return;
-    }
-    next({
-        status: 400,
-        message: "Order status is pending",
     });
 }
 
@@ -192,25 +122,26 @@ function create(req, res) {
 
 module.exports = {
     create: [
-        initData,
-        checkProperties(
+        checkNewOrder,
+        propertiesExist(
             "mobileNumber",
             "deliverTo",
             "dishes",
         ),
+        propertyValuesValid(
+            ["dishes", false, [ [], ]], //Equivilent of " ![ '[]' ].includes(order["dishes"]) "
+        ),
         hasValidDishes,
         hasValidQuantity,
         create,
-    ],
-    read: [
-        orderExists,
+    ], read: [
+        checkExistingOrder,
         read,
-    ],
-    update: [
-        orderExists,
-        initData,
+    ], update: [
+        checkExistingOrder,
+        checkNewOrder,
         bodyIdMatchesRoute,
-        checkProperties(
+        propertiesExist(
             "mobileNumber",
             "deliverTo",
             "status",
@@ -219,14 +150,24 @@ module.exports = {
         ),
         hasValidDishes,
         hasValidQuantity,
-        hasValidStatus,
-        notDelivered,
+        propertyValuesValid(
+            ["status", true, [
+                "pending", 
+                "preparing",
+                "out-for_delivery",
+            ]],
+            ["dishes", false, [
+                [],
+            ]],
+        ),
         update,
-    ],
-    remove: [
-        orderExists,
-        isPending,
+    ], remove: [
+        checkExistingOrder,
+        propertyValuesValid(
+            ["status", true, [
+                "pending",
+            ]],
+        ),
         remove,
-    ],
-    list,
+    ], list,
 }
