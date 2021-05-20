@@ -11,86 +11,128 @@ const nextId = require("../utils/nextId");
 
 // TODO: Implement the /dishes handlers needed to make the tests pass
 
+function initData(req, res, next) {
+    //Moves the new dish's data into locals for ease of access
+    res.locals.foundDish = req.body.data;
+    next();
+}
+
 function hasName(req, res, next) {
-    const { name } = req.body.data;
+    const { name } = res.locals.foundDish;
 
     if(name) {
         next();
-    } else {
-        next({
-            status: 400,
-            message: "Dish must include a name",
-        });
+        return;
     }
+    next({
+        status: 400,
+        message: "Dish must include a name",
+    });
 }
 
 function hasDescription(req, res, next) {
-    const { description } = req.body.data;
+    const { description } = res.locals.foundDish;
 
     if(description) {
         next();
-    } else {
-        next({
-            status: 400,
-            message: "Dish must include a description",
-        })
+        return;
     }
+    next({
+        status: 400,
+        message: "Dish must include a description",
+    });
 }
 
 function priceIsNumber(req, res, next) {
-    const { price } = req.body.data;
+    const { price } = res.locals.foundDish;
 
     if(Number.isInteger(price)) {
         next();
-    } else {
-        next({
-            status: 400,
-            message: "Dish price must be an integer",
-        })
+        return;
     }
+    next({
+        status: 400,
+        message: "Dish price must be an integer",
+    });
 }
 
 function hasPrice(req, res, next) {
-    const { price } = req.body.data;
+    const { price } = res.locals.foundDish;
 
     if(price) {
         next();
-    } else {
-        next({
-            status: 400,
-            message: "Dish must include a price",
-        })
+        return;
     }
+    next({
+        status: 400,
+        message: "Dish must include a price",
+    });
 }
 
 function priceGreaterThanZero(req, res, next) {
-    const { price } = req.body.data;
+    const { price } = res.locals.foundDish;
 
-    if(price < 1) {
-        next({
-            status: 400,
-            message: "Dish must have a price that is an integer greater than 0",
-        })
-    } else {
+    if(price > 0) {
         next();
+        return;
     }
+    next({
+        status: 400,
+        message: "Dish must have a price that is an integer greater than 0",
+    });
 }
 
 function hasImage(req, res, next) {
-    const { image_url } = req.body.data;
+    const { image_url } = res.locals.foundDish;
 
     if(image_url) {
         next();
-    } else {
-        next({
-            status: 400,
-            message: "Dish must include a image_url",
-        });
+        return;
     }
+    next({
+        status: 400,
+        message: "Dish must include a image_url",
+    });
 }
 
-function create(req, res, next) {
-    const newDish = req.body.data;
+function dishExists(req, res, next) {
+    const { dishId } = req.params;
+    const dishIndex = dishes.findIndex((dish) => dish.id === dishId);
+
+    if(dishIndex !== -1) {
+        res.locals.dishIndex = dishIndex;
+        res.locals.foundDish = dishes[dishIndex];
+        next();
+        return;
+    }
+    next({
+        status: 404,
+        message: `Dish does not exist: ${dishId}.`
+    });
+}
+
+function bodyIdMatchesRoute(req, res, next) {
+    const { dishId } = req.params;
+    const updatedDish = res.locals.foundDish;
+
+    if(!updatedDish.id) {
+        updatedDish.id = dishId;
+        next();
+        return;
+    }
+
+    if(updatedDish.id == dishId) {
+        next();
+        return;
+    }
+    next({
+        status: 400,
+        message: `Order id does not match route id. Order: ${updatedDish.id}, Route: ${dishId}.`,
+    });
+}
+
+function create(req, res) {
+    const newDish = res.locals.foundDish;
 
     newDish.id = nextId();
 
@@ -99,64 +141,49 @@ function create(req, res, next) {
     res.status(201).json({ data: newDish });
 }
 
-function dishExists(req, res, next) {
-    const { dishId } = req.params;
-    const foundDish = dishes.find((dish) => dish.id === dishId);
-
-    if(!foundDish) {
-        next({
-            status: 404,
-            message: `Dish does not exist: ${dishId}.`
-        });
-    } else {
-        res.locals.foundDish = foundDish;
-        next();
-    }
+function read(req, res) {
+    res.status(200).json({ data: res.locals.foundDish});
 }
 
-function read(req, res, next) {
-    const foundDish = res.locals.foundDish;
-    res.status(200).json({ data: foundDish});
-}
+function update(req, res) {
+    const updatedDish = res.locals.foundDish;
+    const dishIndex = res.locals.dishIndex;
 
-function bodyIdMatchesRoute(req, res, next) {
-    const { dishId } = req.params;
-    const updatedDish = req.body.data;
-
-    if(!updatedDish.id) {
-        updatedDish.id = dishId;
-        res.locals.updatedDish = updatedDish;
-        next();
-    }
-
-    if(updatedDish.id == dishId) {
-        res.locals.updatedDish = updatedDish;
-        next();
-    } else {
-        next({
-            status: 400,
-            message: `Order id does not match route id. Order: ${updatedDish.id}, Route: ${dishId}.`,
-        })
-    }
-}
-
-function update(req, res, next) {
-    const { dishId } = req.params;
-    const updatedDish = res.locals.updatedDish;
-
-    const dishIndex = dishes.findIndex((dish) => dish.id == dishId);
     dishes[dishIndex] = updatedDish;
 
     res.status(200).json({ data: updatedDish });
 }
 
-function list(req, res, next) {
-    res.json({ data: dishes });
+function list(req, res) {
+    res.status(200).json({ data: dishes });
 }
 
 module.exports = {
-    create: [hasName, hasDescription, hasPrice, priceIsNumber, priceGreaterThanZero, hasImage, create],
-    update: [dishExists, hasName, hasDescription, hasPrice, priceIsNumber, priceGreaterThanZero, hasImage, bodyIdMatchesRoute, update],
-    read: [dishExists, read],
+    create: [
+        initData,
+        hasName,
+        hasDescription,
+        hasPrice,
+        priceIsNumber,
+        priceGreaterThanZero,
+        hasImage,
+        create,
+    ],
+    update: [
+        dishExists,
+        initData,
+        bodyIdMatchesRoute,
+        hasName,
+        hasDescription,
+        hasPrice,
+        priceIsNumber,
+        priceGreaterThanZero,
+        hasImage,
+        update,
+    ],
+    read: [
+        dishExists,
+        read,
+    ],
     list,
 }
