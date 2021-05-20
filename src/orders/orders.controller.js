@@ -13,36 +13,33 @@ function initData(req, res, next) {
     next();
 }
 
-function hasDeliverTo(req, res, next) {
-    const { deliverTo } = res.locals.foundOrder;
 
-    if(deliverTo) {
-        next();
-        return;
+function checkProperties() {
+    const requiredProps = [...arguments];
+
+    return (req, res, next) => {
+        const missingProp = requiredProps.find((prop) => {
+            if(!res.locals.foundOrder[prop]) {
+                return true;
+            }
+            return false;
+        });
+
+        if(missingProp === undefined) {
+            next();
+            return;
+        }
+        next({
+            status:400,
+            message: `Order must include property ${missingProp}`
+        })
     }
-    next({
-        status: 400,
-        message: "Order must include a deliverTo",
-    });
 }
 
-function hasMobileNumber(req, res, next) {
-    const { mobileNumber } = res.locals.foundOrder;
-
-    if(mobileNumber) {
-        next();
-        return;
-    }
-    next({
-        status: 400,
-        message: "Order must include a mobileNumber",
-    });
-}
-
-function hasDish(req, res, next) {
+function hasValidDishes(req, res, next) {
     const { dishes } = res.locals.foundOrder;
 
-    if(dishes && Array.isArray(dishes)) {
+    if(Array.isArray(dishes)) {
         next();
         return;
     }
@@ -77,6 +74,26 @@ function hasValidQuantity(req, res, next) {
         message: `Dish ${foundIndex} must have a quantity that is an integer greater than 0`
     });
 }
+
+function hasValidStatus(req, res, next) {
+    const ordersStatus = res.locals.foundOrder.status;
+    const validStatus = [
+        "pending",
+        "preparing",
+        "out-for_delivery",
+        "delivered",
+    ];
+    
+    if(validStatus.includes(ordersStatus)) {
+        next();
+    }
+    next({
+        status: 400,
+        message: `Order must have a status of pending, preparing, out-for-delivery, delivered: ${ordersStatus}`,
+    });
+    return;
+}
+
 
 function orderExists(req, res, next) {
     const { orderId } = req.params;
@@ -114,32 +131,13 @@ function bodyIdMatchesRoute(req, res, next) {
     });
 }
 
-function hasStatus(req, res, next) {
-    const ordersStatus = res.locals.foundOrder.status;
-    const validStatus = [
-        "pending",
-        "preparing",
-        "out-for_delivery",
-        "delivered",
-    ];
-    
-    if(validStatus.includes(ordersStatus) && ordersStatus) {
-        next();
-    }
-    next({
-        status: 400,
-        message: `Order must have a status of pending, preparing, out-for-delivery, delivered: ${ordersStatus}`,
-    });
-    return;
-}
-
 function notDelivered(req, res, next) {
-    const foundOrder = res.locals.foundOrder;
+    const ordersStatus = res.locals.foundOrder.status;
 
-    if(foundOrder.status === "delivered") {
+    if(ordersStatus === "delivered") {
         next({
             status: 400,
-            message: "A delivered order cannot be changed",
+            message: "Order status is delivered",
         });
         return;
     }
@@ -155,9 +153,10 @@ function isPending(req, res, next) {
     }
     next({
         status: 400,
-        message: "An order cannot be deleted unless it is pending",
+        message: "Order status is pending",
     });
 }
+
 
 function update(req, res) {
     const updatedOrder = res.locals.foundOrder;
@@ -192,9 +191,42 @@ function create(req, res) {
 }
 
 module.exports = {
-    create: [initData, hasDeliverTo, hasMobileNumber, hasDish, hasValidQuantity, create],
-    read: [orderExists, read],
-    update: [orderExists, initData, hasDeliverTo, hasDish, hasMobileNumber, hasValidQuantity, hasStatus, notDelivered, bodyIdMatchesRoute, update],
-    remove: [orderExists, isPending, remove],
+    create: [
+        initData,
+        checkProperties(
+            "mobileNumber",
+            "deliverTo",
+            "dishes",
+        ),
+        hasValidDishes,
+        hasValidQuantity,
+        create,
+    ],
+    read: [
+        orderExists,
+        read,
+    ],
+    update: [
+        orderExists,
+        initData,
+        bodyIdMatchesRoute,
+        checkProperties(
+            "mobileNumber",
+            "deliverTo",
+            "status",
+            "id",
+            "dishes",
+        ),
+        hasValidDishes,
+        hasValidQuantity,
+        hasValidStatus,
+        notDelivered,
+        update,
+    ],
+    remove: [
+        orderExists,
+        isPending,
+        remove,
+    ],
     list,
 }
